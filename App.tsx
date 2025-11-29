@@ -93,9 +93,28 @@ const App: React.FC = () => {
   // --- DEEP LINK HANDLING ---
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    // If link contains ?view=patient_login, skip to Patient Face Auth
-    if (params.get('view') === 'patient_login') {
-        // Remove param from URL so refresh doesn't stick
+    const viewParam = params.get('view');
+    const phoneParam = params.get('phone');
+
+    // 1. Direct Login (Magic Link from WhatsApp)
+    if (viewParam === 'patient_direct' && phoneParam) {
+        // Read directly from storage to ensure we catch it even on fresh load
+        const savedUsersStr = localStorage.getItem('users_v5');
+        const users: RegisteredUser[] = savedUsersStr ? JSON.parse(savedUsersStr) : [];
+        
+        const matchedUser = users.find(u => u.patientPhone === phoneParam);
+        
+        if (matchedUser) {
+            setCurrentUser(matchedUser);
+            setCurrentView(View.Patient);
+            // Clean URL
+            window.history.replaceState({}, document.title, window.location.pathname);
+        } else {
+            console.warn("Direct login failed: User not found for phone", phoneParam);
+        }
+    } 
+    // 2. Fallback to Face Auth Login page
+    else if (viewParam === 'patient_login') {
         window.history.replaceState({}, document.title, window.location.pathname);
         setCurrentView(View.LoginPatient);
     }
@@ -313,11 +332,12 @@ const App: React.FC = () => {
     setLastSmsTime(prev => ({ ...prev, [medicine.id]: now }));
     const foodInstruction = medicine.beforeFood ? 'BEFORE' : 'AFTER';
     
-    // Deep Link to Patient Login
-    const appLink = `${window.location.origin}?view=patient_login`;
+    // Direct Login Link (Magic Link)
+    // We add the phone number so we know WHO to log in
+    const appLink = `${window.location.origin}?view=patient_direct&phone=${targetPhone}`;
 
     // Patient Reminder Format
-    const messageContent = `🔔 *Medicine Reminder*\n\n💊 *${medicine.name}* (${medicine.dosage}mg)\n🔢 Take: *${medicine.pills} pill(s)*\n🍽️ Instruction: *${foodInstruction} food*\n⏰ Time: *${formatTime12Hour(medicine.schedule.time)}*\n\nPlease take it now!\n\n🔗 Tap to Login: ${appLink}`;
+    const messageContent = `🔔 *Medicine Reminder*\n\n💊 *${medicine.name}* (${medicine.dosage}mg)\n🔢 Take: *${medicine.pills} pill(s)*\n🍽️ Instruction: *${foodInstruction} food*\n⏰ Time: *${formatTime12Hour(medicine.schedule.time)}*\n\nPlease take it now!\n\n🔗 Tap to Open Dashboard: ${appLink}`;
     
     const result = await sendSmsViaApi(targetPhone, messageContent);
     
