@@ -205,6 +205,7 @@ const App: React.FC = () => {
       if (cPhone) {
         const foodInstruction = activeReminder.beforeFood ? 'BEFORE' : 'AFTER';
         const timestamp = new Date().toLocaleTimeString('en-US', { hour12: false });
+        // Caretaker Alert Format
         const messageContent = `ALERT: Patient MISSED medicine. Name: ${activeReminder.name} (${activeReminder.dosage}mg). Quantity: ${activeReminder.pills} pill(s). Instruction: ${foodInstruction} food. Time: ${formatTime12Hour(activeReminder.schedule.time)}. [${timestamp}]`;
         
         await sendSmsViaApi(cPhone, messageContent);
@@ -280,7 +281,7 @@ const App: React.FC = () => {
     setLastSmsTime(prev => ({ ...prev, [medicine.id]: now }));
     const foodInstruction = medicine.beforeFood ? 'BEFORE' : 'AFTER';
     
-    // Exact format requested
+    // Patient Reminder Format
     const messageContent = `MediRemind:\nTake ${medicine.pills} pill(s) of\n${medicine.name} (${medicine.dosage}mg)\n${foodInstruction} food.\nTime: ${formatTime12Hour(medicine.schedule.time)}.`;
     
     const result = await sendSmsViaApi(targetPhone, messageContent);
