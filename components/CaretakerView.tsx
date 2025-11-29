@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { Medicine, Log } from '../types';
 import MedicineForm from './MedicineForm';
@@ -7,7 +6,7 @@ import { translations } from '../constants';
 
 interface CaretakerViewProps {
   medicines: Medicine[];
-  addMedicine: (med: Omit<Medicine, 'id'>) => void;
+  addMedicine: (med: Omit<Medicine, 'id' | 'caretakerId'>) => void;
   logs: Log[];
   onTestSMS?: () => void;
 }

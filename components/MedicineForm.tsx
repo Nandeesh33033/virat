@@ -3,7 +3,7 @@ import { Medicine } from '../types';
 import { DAYS_OF_WEEK, translations } from '../constants';
 
 interface MedicineFormProps {
-  addMedicine: (med: Omit<Medicine, 'id'>) => void;
+  addMedicine: (med: Omit<Medicine, 'id' | 'caretakerId'>) => void;
   onMedicineAdded: () => void;
 }
 
