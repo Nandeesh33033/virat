@@ -90,6 +90,17 @@ const App: React.FC = () => {
     localStorage.setItem('lastSmsTime_v5', JSON.stringify(lastSmsTime));
   }, [lastSmsTime]);
 
+  // --- DEEP LINK HANDLING ---
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    // If link contains ?view=patient_login, skip to Patient Face Auth
+    if (params.get('view') === 'patient_login') {
+        // Remove param from URL so refresh doesn't stick
+        window.history.replaceState({}, document.title, window.location.pathname);
+        setCurrentView(View.LoginPatient);
+    }
+  }, []);
+
   // --- HELPER FUNCTIONS ---
   const formatTime12Hour = (time24: string) => {
     if (!time24) return '';
@@ -302,8 +313,11 @@ const App: React.FC = () => {
     setLastSmsTime(prev => ({ ...prev, [medicine.id]: now }));
     const foodInstruction = medicine.beforeFood ? 'BEFORE' : 'AFTER';
     
+    // Deep Link to Patient Login
+    const appLink = `${window.location.origin}?view=patient_login`;
+
     // Patient Reminder Format
-    const messageContent = `🔔 *Medicine Reminder*\n\n💊 *${medicine.name}* (${medicine.dosage}mg)\n🔢 Take: *${medicine.pills} pill(s)*\n🍽️ Instruction: *${foodInstruction} food*\n⏰ Time: *${formatTime12Hour(medicine.schedule.time)}*\n\nPlease take it now!`;
+    const messageContent = `🔔 *Medicine Reminder*\n\n💊 *${medicine.name}* (${medicine.dosage}mg)\n🔢 Take: *${medicine.pills} pill(s)*\n🍽️ Instruction: *${foodInstruction} food*\n⏰ Time: *${formatTime12Hour(medicine.schedule.time)}*\n\nPlease take it now!\n\n🔗 Tap to Login: ${appLink}`;
     
     const result = await sendSmsViaApi(targetPhone, messageContent);
     
