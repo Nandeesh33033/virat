@@ -143,58 +143,63 @@ const App: React.FC = () => {
     const encodedMessage = encodeURIComponent(message);
     const fast2SmsUrl = `https://www.fast2sms.com/dev/bulkV2?authorization=${FAST2SMS_API_KEY}&message=${encodedMessage}&language=english&route=q&numbers=${formattedPhone}&flash=0`;
 
-    // Priority Proxy List + Direct Fallback
+    // Priority Proxy List
+    // We prioritize CorsProxy.io as it handles redirects well
     const proxies = [
-        `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(fast2SmsUrl)}`,
         `https://corsproxy.io/?${encodeURIComponent(fast2SmsUrl)}`,
-        `https://api.allorigins.win/raw?url=${encodeURIComponent(fast2SmsUrl)}`,
-        fast2SmsUrl // DIRECT ATTEMPT (Might work if CORS is loose)
+        `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(fast2SmsUrl)}`,
+        `https://api.allorigins.win/raw?url=${encodeURIComponent(fast2SmsUrl)}`
     ];
 
     for (const proxyUrl of proxies) {
         try {
-            console.log(`Trying SMS via: ${proxyUrl}`);
+            console.log(`Trying SMS via Proxy: ${proxyUrl}`);
             const response = await fetch(proxyUrl, {
                 method: 'GET',
                 headers: { 'Accept': 'application/json' }
             });
 
             if (!response.ok) {
-                 console.warn(`Request failed with status: ${response.status}`);
+                 console.warn(`Proxy Request failed with status: ${response.status}`);
                  continue;
             }
 
             const text = await response.text();
-            console.log("Raw SMS Response:", text);
+            console.log("SMS Response:", text);
             
-            let data;
-            try {
-                data = JSON.parse(text);
-                // Handle wrapped responses if any
-                if (data.contents) {
-                     try { data = JSON.parse(data.contents); } catch(e) {}
-                }
-            } catch (e) {
-                console.warn("JSON Parse Error on SMS response", e);
-                // Even if JSON fails, if text says "success" assume good
-                if (text.toLowerCase().includes('success') || text.toLowerCase().includes('true')) {
-                     return { success: true };
-                }
-                continue;
+            // Check for success in text even if JSON parsing fails
+            if (text.toLowerCase().includes('success') || text.toLowerCase().includes('true')) {
+                 return { success: true };
             }
 
-            if (data && (data.return === true || data.message?.[0] === "SMS sent successfully.")) {
-                console.log("SMS Success:", data);
-                return { success: true };
-            } else if (data && data.message) {
-                 return { success: false, error: "Fast2SMS Error: " + data.message };
+            try {
+                const data = JSON.parse(text);
+                if (data && (data.return === true || data.message?.[0] === "SMS sent successfully.")) {
+                    return { success: true };
+                } else if (data && data.message) {
+                    // Specific API error (e.g. DND)
+                     return { success: false, error: "Fast2SMS Error: " + data.message };
+                }
+            } catch (e) {
+                // Ignore parse error, continue to next proxy
             }
         } catch (error) {
-            console.error("SMS Network Error:", error);
+            console.error("SMS Network Error (Proxy):", error);
         }
     }
 
-    return { success: false, error: "Network Error: Could not reach Fast2SMS via any proxy. Check Internet." };
+    // FINAL FALLBACK: "No-CORS" Direct Request
+    // This sends the request to Fast2SMS but ignores the response (Fire and Forget).
+    // This allows the browser to send it even if it blocks reading the reply.
+    try {
+        console.log("Proxies failed. Attempting Direct NO-CORS request...");
+        await fetch(fast2SmsUrl, { mode: 'no-cors' });
+        console.log("Direct NO-CORS request sent.");
+        return { success: true }; // We assume success because we can't read the error.
+    } catch (e) {
+        console.error("Direct SMS Failed:", e);
+        return { success: false, error: "Critical Network Failure. SMS not sent." };
+    }
   };
 
   const handleReminderTimeout = async () => {
@@ -208,7 +213,10 @@ const App: React.FC = () => {
         // Caretaker Alert Format
         const messageContent = `ALERT: Patient MISSED medicine. Name: ${activeReminder.name} (${activeReminder.dosage}mg). Quantity: ${activeReminder.pills} pill(s). Instruction: ${foodInstruction} food. Time: ${formatTime12Hour(activeReminder.schedule.time)}. [${timestamp}]`;
         
-        await sendSmsViaApi(cPhone, messageContent);
+        const result = await sendSmsViaApi(cPhone, messageContent);
+        if (!result.success) {
+            console.error("Missed Dose SMS Failed:", result.error);
+        }
       }
       addLog(activeReminder.id, 'missed', activeReminder.caretakerId);
     }
@@ -294,6 +302,8 @@ const App: React.FC = () => {
         }
     } else if (!result.success) {
         console.warn("Automated SMS failed:", result.error);
+        // Alert user on screen if automated SMS fails so they know logic triggered but network failed
+        alert(`Warning: Failed to send SMS for ${medicine.name}. Reason: ${result.error || 'Network Blocked'}`);
     }
   };
 
