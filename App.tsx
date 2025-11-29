@@ -13,8 +13,12 @@ import CaretakerLoginScreen from './components/CaretakerLoginScreen';
 import PatientLoginScreen from './components/PatientLoginScreen';
 
 // --- CONFIGURATION ---
-// FAST2SMS API KEY
-const FAST2SMS_API_KEY = 'tJE8T3LG0yQIRDdNgFaKloxeZ9rXqsmiO5bMcY7Sj4hHpCvA2zHLnNZyDTIuS7c1Y4MgJklifRd3ebB9';
+// SET THIS TO 'false' TO SEND REAL MESSAGES
+const SIMULATION_MODE = false; 
+
+// --- GREEN-API CREDENTIALS ---
+const GREEN_API_INSTANCE_ID = '7105398017'; 
+const GREEN_API_API_TOKEN = '22f985faa53449d4b4b65003ccda72e84815977ea3e745bc82';
 
 const App: React.FC = () => {
   // --- STATE WITH PERSISTENCE (V5 Keys to Wipe Old Data) ---
@@ -132,64 +136,84 @@ const App: React.FC = () => {
   
   const sendSmsViaApi = async (phone: string, message: string): Promise<{ success: boolean; error?: string }> => {
     if (!phone) return { success: false, error: 'Missing Phone' };
+
+    // --- SIMULATION MODE ---
+    if (SIMULATION_MODE) {
+        console.log(`[SIMULATION] WhatsApp to ${phone}: ${message}`);
+        setTimeout(() => {
+            alert(`✅ SIMULATION SUCCESS\n\nTo: ${phone}\nMsg: "${message}"\n\n(Real sending is disabled in code)`);
+        }, 500);
+        return { success: true };
+    }
     
-    // Fast2SMS requires just the 10 digit number usually
+    // Ensure clean phone number
     let formattedPhone = phone.replace(/[^\d]/g, '');
-    if (formattedPhone.length > 10) {
-        formattedPhone = formattedPhone.slice(-10);
+    
+    // Green API requires country code
+    if (formattedPhone.length === 10) {
+        formattedPhone = '91' + formattedPhone; 
     }
 
-    // Fast2SMS URL - Route Q (Quick)
-    // Attempting minimalist message to pass filters
-    const fast2smsUrl = `https://www.fast2sms.com/dev/bulkV2?authorization=${FAST2SMS_API_KEY}&route=q&message=${encodeURIComponent(message)}&language=english&flash=0&numbers=${formattedPhone}`;
+    // Green API Chat ID format: <number>@c.us
+    const chatId = `${formattedPhone}@c.us`;
 
-    // Proxy List
-    const proxies = [
-        `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(fast2smsUrl)}`,
-        `https://corsproxy.io/?${encodeURIComponent(fast2smsUrl)}`,
-        `https://api.allorigins.win/raw?url=${encodeURIComponent(fast2smsUrl)}`
-    ];
-
-    let lastError = '';
-
-    // 1. Try Proxies
-    for (const proxyUrl of proxies) {
-        try {
-            console.log(`Attempting SMS via proxy: ${proxyUrl}`);
-            const response = await fetch(proxyUrl, { method: 'GET' });
-            
-            // Fast2SMS returns JSON
-            const data = await response.json();
-            console.log("Fast2SMS Response:", data);
-
-            if (data.return === true) {
-                return { success: true };
-            } else {
-                lastError = data.message || "Fast2SMS API Error";
-                // DLT BLOCK HANDLER
-                if (lastError.includes("blocked") || lastError.includes("DLT")) {
-                    console.warn("Fast2SMS DLT Block detected. Falling back to simulation for demo continuity.");
-                    alert(`NOTE: SMS Provider Blocked this message (DLT Rules).\n\nSIMULATING DELIVERY:\nTo: ${formattedPhone}\nMsg: "${message}"`);
-                    // Return TRUE so the app flow continues (stops timer, etc)
-                    return { success: true }; 
-                }
-            }
-        } catch (error: any) {
-            console.error("Proxy Error:", error);
-            lastError = error.message;
-        }
+    // Verify keys are present
+    if (GREEN_API_INSTANCE_ID.includes('YOUR') || GREEN_API_API_TOKEN.includes('YOUR')) {
+        alert("Green API Keys are missing in App.tsx! Switching to Simulation.");
+        return { success: false, error: "Missing API Keys" };
     }
 
-    // 2. Fallback: No-CORS (Fire and Forget)
+    const apiUrl = `https://api.green-api.com/waInstance${GREEN_API_INSTANCE_ID}/sendMessage/${GREEN_API_API_TOKEN}`;
+    
     try {
-        console.log("Proxies failed. Attempting no-cors mode...");
-        await fetch(fast2smsUrl, { mode: 'no-cors' });
-        console.log("No-cors request sent.");
-        // We assume success in no-cors since we can't read the error
-        return { success: true }; 
+        console.log(`Sending WhatsApp via Green-API to ${formattedPhone}...`);
+        
+        const payload = {
+            chatId: chatId,
+            message: message
+        };
+
+        // Try direct fetch first
+        let response = await fetch(apiUrl, {
+             method: 'POST',
+             headers: { 'Content-Type': 'application/json' },
+             body: JSON.stringify(payload)
+        });
+        
+        // If direct fails due to CORS (opaque response), try proxy
+        if (!response.ok && response.status === 0) {
+             console.log("Direct fetch failed (CORS), trying Proxy...");
+             const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(apiUrl)}`;
+             response = await fetch(proxyUrl, {
+                 method: 'POST',
+                 headers: { 'Content-Type': 'application/json' },
+                 body: JSON.stringify(payload)
+            });
+        }
+        
+        if (response.ok) {
+            console.log("Green-API Request Sent");
+            return { success: true };
+        } else {
+             const errorData = await response.text();
+             console.error("Green-API Error:", errorData);
+             return { success: false, error: `HTTP ${response.status}: ${errorData}` };
+        }
+
     } catch (e: any) {
-        return { success: false, error: lastError || "Network Blocked" };
+        console.error("WhatsApp Error:", e);
+        return { success: false, error: e.message || "Network Error" };
     }
+  };
+
+  const handleManualTestSMS = async () => {
+      if (!currentUser) return;
+      const result = await sendSmsViaApi(currentUser.patientPhone, "🔔 This is a Test Message from MediRemind!");
+      if (result.success) {
+          if (!SIMULATION_MODE) alert("Test Message Sent!");
+      } else {
+          alert("Test Failed: " + result.error);
+      }
   };
 
   const handleReminderTimeout = async () => {
@@ -199,12 +223,12 @@ const App: React.FC = () => {
 
       if (cPhone) {
         const timestamp = new Date().toLocaleTimeString('en-US', { hour12: false });
-        // Minimalist message to try and pass filters
-        const messageContent = `Reminder missed ${activeReminder.name} ${formatTime12Hour(activeReminder.schedule.time)}`;
+        // Caretaker Alert Format
+        const messageContent = `⚠️ *MISSED DOSE ALERT*\n\nThe patient has NOT taken their medicine.\n\n💊 Medicine: *${activeReminder.name}* (${activeReminder.dosage}mg)\n🔢 Quantity: *${activeReminder.pills} pill(s)*\n🍽️ Instruction: *${activeReminder.beforeFood ? 'BEFORE' : 'AFTER'} food*\n⏰ Scheduled: *${formatTime12Hour(activeReminder.schedule.time)}*\n\nPlease check on the patient immediately.\n[Log: ${timestamp}]`;
         
         const result = await sendSmsViaApi(cPhone, messageContent);
         if (!result.success) {
-            console.error("Missed Dose SMS Failed:", result.error);
+            console.error("Missed Dose WhatsApp Failed:", result.error);
         }
       }
       addLog(activeReminder.id, 'missed', activeReminder.caretakerId);
@@ -278,20 +302,20 @@ const App: React.FC = () => {
     setLastSmsTime(prev => ({ ...prev, [medicine.id]: now }));
     const foodInstruction = medicine.beforeFood ? 'BEFORE' : 'AFTER';
     
-    // Minimalist message
-    const messageContent = `Reminder ${medicine.name} ${medicine.dosage}mg ${foodInstruction} food`;
+    // Patient Reminder Format
+    const messageContent = `🔔 *Medicine Reminder*\n\n💊 *${medicine.name}* (${medicine.dosage}mg)\n🔢 Take: *${medicine.pills} pill(s)*\n🍽️ Instruction: *${foodInstruction} food*\n⏰ Time: *${formatTime12Hour(medicine.schedule.time)}*\n\nPlease take it now!`;
     
     const result = await sendSmsViaApi(targetPhone, messageContent);
     
     if (manualTrigger) {
         if (result.success) {
-            alert("SMS Sent Successfully!");
+            // Success alert handled in simulation mode or silent for auto
+            if (!SIMULATION_MODE) console.log("Sent successfully");
         } else {
-            alert("SMS Failed: " + result.error);
+            alert("WhatsApp Failed: " + result.error);
         }
     } else if (!result.success) {
-        console.warn("Automated SMS failed:", result.error);
-        alert(`Warning: Failed to send SMS for ${medicine.name}. Reason: ${result.error}`);
+        console.warn("Automated WhatsApp failed:", result.error);
     }
   };
 
@@ -325,13 +349,10 @@ const App: React.FC = () => {
         );
 
         if (!takenToday && !missedToday) {
-           // Only update modal if one isn't already active to avoid flickering, 
-           // OR if the current time matches exactly (priority)
            if (!activeReminder || med.schedule.time === currentTimeStr) {
                setActiveReminder(med);
            }
            
-           // Send SMS trigger
            if (med.schedule.time === currentTimeStr) {
                sendReminderSMS(med, false); 
            }
@@ -410,7 +431,8 @@ const App: React.FC = () => {
           <CaretakerView 
             medicines={userMedicines} 
             addMedicine={addMedicine} 
-            logs={userLogs} 
+            logs={userLogs}
+            onTestSMS={handleManualTestSMS}
           />
         ) : (
           <PatientView medicines={userMedicines} logs={userLogs} />
