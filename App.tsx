@@ -164,14 +164,14 @@ const App: React.FC = () => {
     setActiveReminder(null);
   };
   
-  const sendSmsViaApi = async (phone: string, message: string): Promise<{ success: boolean; error?: string }> => {
+  const sendSmsViaApi = async (phone: string, message: string, imageUrl?: string): Promise<{ success: boolean; error?: string }> => {
     if (!phone) return { success: false, error: 'Missing Phone' };
 
     // --- SIMULATION MODE ---
     if (SIMULATION_MODE) {
-        console.log(`[SIMULATION] WhatsApp to ${phone}: ${message}`);
+        console.log(`[SIMULATION] WhatsApp to ${phone}: ${message} ${imageUrl ? '[+Image]' : ''}`);
         setTimeout(() => {
-            alert(`✅ SIMULATION SUCCESS\n\nTo: ${phone}\nMsg: "${message}"\n\n(Real sending is disabled in code)`);
+            alert(`✅ SIMULATION SUCCESS\n\nTo: ${phone}\nMsg: "${message}"\n${imageUrl ? '[Image Included]' : ''}\n\n(Real sending is disabled in code)`);
         }, 500);
         return { success: true };
     }
@@ -193,15 +193,32 @@ const App: React.FC = () => {
         return { success: false, error: "Missing API Keys" };
     }
 
-    const apiUrl = `https://api.green-api.com/waInstance${GREEN_API_INSTANCE_ID}/sendMessage/${GREEN_API_API_TOKEN}`;
+    // Determine Endpoint: Send File if we have a public URL, otherwise Send Text
+    const isPublicUrl = imageUrl && imageUrl.startsWith('http');
+    const methodEndpoint = isPublicUrl ? 'sendFileByUrl' : 'sendMessage';
+    const apiUrl = `https://api.green-api.com/waInstance${GREEN_API_INSTANCE_ID}/${methodEndpoint}/${GREEN_API_API_TOKEN}`;
     
     try {
-        console.log(`Sending WhatsApp via Green-API to ${formattedPhone}...`);
+        console.log(`Sending WhatsApp via Green-API to ${formattedPhone} using ${methodEndpoint}...`);
         
-        const payload = {
-            chatId: chatId,
-            message: message
-        };
+        let payload: any;
+        if (isPublicUrl) {
+             payload = {
+                chatId: chatId,
+                urlFile: imageUrl,
+                fileName: 'medicine.jpg',
+                caption: message
+             };
+        } else {
+             // Fallback: If image is base64 (local) or missing, send just text
+             // Sending Base64 via Green-API requires multipart/form-data upload which is complex via proxy.
+             // We stick to text fallback for reliability.
+             if (imageUrl) console.warn("Image is not a public URL (likely local base64). Sending text only.");
+             payload = {
+                chatId: chatId,
+                message: message
+             };
+        }
 
         // Try direct fetch first
         let response = await fetch(apiUrl, {
@@ -236,16 +253,6 @@ const App: React.FC = () => {
     }
   };
 
-  const handleManualTestSMS = async () => {
-      if (!currentUser) return;
-      const result = await sendSmsViaApi(currentUser.patientPhone, "🔔 This is a Test Message from MediRemind!");
-      if (result.success) {
-          if (!SIMULATION_MODE) alert("Test Message Sent!");
-      } else {
-          alert("Test Failed: " + result.error);
-      }
-  };
-
   const handleReminderTimeout = async () => {
     if (activeReminder) {
       const medicineOwner = allUsers.find(u => u.caretakerPhone === activeReminder.caretakerId);
@@ -256,7 +263,7 @@ const App: React.FC = () => {
         // Caretaker Alert Format
         const messageContent = `⚠️ *MISSED DOSE ALERT*\n\nThe patient has NOT taken their medicine.\n\n💊 Medicine: *${activeReminder.name}* (${activeReminder.dosage}mg)\n🔢 Quantity: *${activeReminder.pills} pill(s)*\n🍽️ Instruction: *${activeReminder.beforeFood ? 'BEFORE' : 'AFTER'} food*\n⏰ Scheduled: *${formatTime12Hour(activeReminder.schedule.time)}*\n\nPlease check on the patient immediately.\n[Log: ${timestamp}]`;
         
-        const result = await sendSmsViaApi(cPhone, messageContent);
+        const result = await sendSmsViaApi(cPhone, messageContent, activeReminder.image);
         if (!result.success) {
             console.error("Missed Dose WhatsApp Failed:", result.error);
         }
@@ -339,7 +346,7 @@ const App: React.FC = () => {
     // Patient Reminder Format
     const messageContent = `🔔 *Medicine Reminder*\n\n💊 *${medicine.name}* (${medicine.dosage}mg)\n🔢 Take: *${medicine.pills} pill(s)*\n🍽️ Instruction: *${foodInstruction} food*\n⏰ Time: *${formatTime12Hour(medicine.schedule.time)}*\n\nPlease take it now!\n\n🔗 Tap to Open Dashboard: ${appLink}`;
     
-    const result = await sendSmsViaApi(targetPhone, messageContent);
+    const result = await sendSmsViaApi(targetPhone, messageContent, medicine.image);
     
     if (manualTrigger) {
         if (result.success) {
@@ -418,7 +425,13 @@ const App: React.FC = () => {
 
   if (!isLoggedIn) {
       return (
-        <>
+        <div className="flex justify-center min-h-screen bg-gray-900">
+        <div className="w-full max-w-[430px] bg-white shadow-2xl overflow-hidden relative min-h-screen flex flex-col">
+            {/* Dynamic Island Visual */}
+            <div className="absolute top-0 left-0 right-0 h-6 bg-black z-50 flex justify-center">
+                <div className="w-32 h-6 bg-black rounded-b-2xl"></div>
+            </div>
+            
             {renderActiveReminder()}
             {(() => {
                 switch (currentView) {
@@ -453,26 +466,33 @@ const App: React.FC = () => {
                         return <LandingScreen onRegisterClick={() => setCurrentView(View.Register)} onLoginClick={() => setCurrentView(View.LoginChoice)} />;
                 }
             })()}
-        </>
+        </div>
+        </div>
       );
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
+    <div className="flex justify-center min-h-screen bg-gray-900">
+    <div className="w-full max-w-[430px] bg-white shadow-2xl overflow-hidden relative min-h-screen flex flex-col">
+         {/* Dynamic Island Visual */}
+        <div className="absolute top-0 left-0 right-0 h-6 bg-black z-50 flex justify-center">
+            <div className="w-32 h-6 bg-black rounded-b-2xl"></div>
+        </div>
+        
       <Header onLogout={handleLogout} />
-      <main className="flex-grow p-4">
+      <main className="flex-grow p-4 overflow-y-auto">
         {currentView === View.Caretaker ? (
           <CaretakerView 
             medicines={userMedicines} 
             addMedicine={addMedicine} 
             logs={userLogs}
-            onTestSMS={handleManualTestSMS}
           />
         ) : (
           <PatientView medicines={userMedicines} logs={userLogs} />
         )}
       </main>
       {renderActiveReminder()}
+    </div>
     </div>
   );
 };
