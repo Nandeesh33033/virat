@@ -425,13 +425,7 @@ const App: React.FC = () => {
 
   if (!isLoggedIn) {
       return (
-        <div className="flex justify-center min-h-screen bg-gray-900">
-        <div className="w-full max-w-[430px] bg-white shadow-2xl overflow-hidden relative min-h-screen flex flex-col">
-            {/* Dynamic Island Visual */}
-            <div className="absolute top-0 left-0 right-0 h-6 bg-black z-50 flex justify-center">
-                <div className="w-32 h-6 bg-black rounded-b-2xl"></div>
-            </div>
-            
+        <div className="flex flex-col min-h-screen bg-gray-50">
             {renderActiveReminder()}
             {(() => {
                 switch (currentView) {
@@ -467,20 +461,13 @@ const App: React.FC = () => {
                 }
             })()}
         </div>
-        </div>
       );
   }
 
   return (
-    <div className="flex justify-center min-h-screen bg-gray-900">
-    <div className="w-full max-w-[430px] bg-white shadow-2xl overflow-hidden relative min-h-screen flex flex-col">
-         {/* Dynamic Island Visual */}
-        <div className="absolute top-0 left-0 right-0 h-6 bg-black z-50 flex justify-center">
-            <div className="w-32 h-6 bg-black rounded-b-2xl"></div>
-        </div>
-        
+    <div className="flex flex-col min-h-screen bg-gray-50">
       <Header onLogout={handleLogout} />
-      <main className="flex-grow p-4 overflow-y-auto">
+      <main className="flex-grow container mx-auto p-4 md:p-8">
         {currentView === View.Caretaker ? (
           <CaretakerView 
             medicines={userMedicines} 
@@ -492,7 +479,6 @@ const App: React.FC = () => {
         )}
       </main>
       {renderActiveReminder()}
-    </div>
     </div>
   );
 };
