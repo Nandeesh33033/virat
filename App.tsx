@@ -21,32 +21,38 @@ const GREEN_API_INSTANCE_ID = '7105398017';
 const GREEN_API_API_TOKEN = '22f985faa53449d4b4b65003ccda72e84815977ea3e745bc82';
 
 const App: React.FC = () => {
-  // --- STATE WITH PERSISTENCE (V5 Keys to Wipe Old Data) ---
+  // --- STATE WITH PERSISTENCE (V6 Keys to Wipe Old Data) ---
   
-  // 1. ALL USERS (Database Simulation)
+  // 1. ALL USERS (Database Simulation - Shared across tabs via localStorage)
   const [allUsers, setAllUsers] = useState<RegisteredUser[]>(() => {
-    const saved = localStorage.getItem('users_v5');
+    const saved = localStorage.getItem('users_v6');
     if (saved) {
         return JSON.parse(saved);
     }
     return [];
   });
 
-  // 2. ACTIVE SESSION
+  // 2. ACTIVE SESSION (Session Storage - Unique per tab)
   const [currentUser, setCurrentUser] = useState<RegisteredUser | null>(() => {
-    const saved = localStorage.getItem('currentUser_v5');
+    const saved = sessionStorage.getItem('currentUser_v6');
     return saved ? JSON.parse(saved) : null;
   });
 
-  // 3. ALL MEDICINES
+  // 2.1 CURRENT VIEW (Session Storage - Unique per tab)
+  const [currentView, setCurrentView] = useState<View>(() => {
+    const saved = sessionStorage.getItem('currentView_v6');
+    return saved ? (saved as View) : View.Landing;
+  });
+
+  // 3. ALL MEDICINES (Shared)
   const [allMedicines, setAllMedicines] = useState<Medicine[]>(() => {
-    const saved = localStorage.getItem('medicines_v5');
+    const saved = localStorage.getItem('medicines_v6');
     return saved ? JSON.parse(saved) : initialMedicines;
   });
 
-  // 4. ALL LOGS
+  // 4. ALL LOGS (Shared)
   const [allLogs, setAllLogs] = useState<Log[]>(() => {
-     const saved = localStorage.getItem('logs_v5');
+     const saved = localStorage.getItem('logs_v6');
      if (saved) {
         const parsed = JSON.parse(saved);
         return parsed.map((l: any) => ({ ...l, timestamp: new Date(l.timestamp) }));
@@ -54,41 +60,74 @@ const App: React.FC = () => {
      return initialLogs;
   });
 
-  const [currentView, setCurrentView] = useState<View>(View.Landing);
   const [activeReminder, setActiveReminder] = useState<Medicine | null>(null);
   
   const isLoggedIn = !!currentUser;
   
-  // Persist SMS timestamps to avoid duplicate sending on refresh
+  // Persist SMS timestamps to avoid duplicate sending on refresh (Shared)
   const [lastSmsTime, setLastSmsTime] = useState<Record<string, number>>(() => {
-    const saved = localStorage.getItem('lastSmsTime_v5');
+    const saved = localStorage.getItem('lastSmsTime_v6');
     return saved ? JSON.parse(saved) : {};
   });
 
   // --- PERSISTENCE EFFECTS ---
+
+  // Sync Shared Data to LocalStorage
   useEffect(() => {
-    localStorage.setItem('users_v5', JSON.stringify(allUsers));
+    localStorage.setItem('users_v6', JSON.stringify(allUsers));
   }, [allUsers]);
 
   useEffect(() => {
+    localStorage.setItem('medicines_v6', JSON.stringify(allMedicines));
+  }, [allMedicines]);
+
+  useEffect(() => {
+    localStorage.setItem('logs_v6', JSON.stringify(allLogs));
+  }, [allLogs]);
+
+  useEffect(() => {
+    localStorage.setItem('lastSmsTime_v6', JSON.stringify(lastSmsTime));
+  }, [lastSmsTime]);
+
+  // Sync Session Data to SessionStorage
+  useEffect(() => {
     if (currentUser) {
-        localStorage.setItem('currentUser_v5', JSON.stringify(currentUser));
+        sessionStorage.setItem('currentUser_v6', JSON.stringify(currentUser));
     } else {
-        localStorage.removeItem('currentUser_v5');
+        sessionStorage.removeItem('currentUser_v6');
     }
   }, [currentUser]);
 
   useEffect(() => {
-    localStorage.setItem('medicines_v5', JSON.stringify(allMedicines));
-  }, [allMedicines]);
+    sessionStorage.setItem('currentView_v6', currentView);
+  }, [currentView]);
 
+  // --- CROSS-TAB SYNCHRONIZATION ---
+  // This enables "Two Web" accessibility: One tab Caretaker, One tab Patient
   useEffect(() => {
-    localStorage.setItem('logs_v5', JSON.stringify(allLogs));
-  }, [allLogs]);
+    const handleStorageChange = (e: StorageEvent) => {
+      // If another tab updates data, sync it here
+      if (e.key === 'users_v6' && e.newValue) {
+        setAllUsers(JSON.parse(e.newValue));
+      }
+      if (e.key === 'medicines_v6' && e.newValue) {
+        setAllMedicines(JSON.parse(e.newValue));
+      }
+      if (e.key === 'logs_v6' && e.newValue) {
+        const parsed = JSON.parse(e.newValue);
+        // Restore Date objects
+        const fixedLogs = parsed.map((l: any) => ({ ...l, timestamp: new Date(l.timestamp) }));
+        setAllLogs(fixedLogs);
+      }
+      if (e.key === 'lastSmsTime_v6' && e.newValue) {
+        setLastSmsTime(JSON.parse(e.newValue));
+      }
+    };
 
-  useEffect(() => {
-    localStorage.setItem('lastSmsTime_v5', JSON.stringify(lastSmsTime));
-  }, [lastSmsTime]);
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
+  }, []);
+
 
   // --- DEEP LINK HANDLING ---
   useEffect(() => {
@@ -99,7 +138,7 @@ const App: React.FC = () => {
     // 1. Direct Login (Magic Link from WhatsApp)
     if (viewParam === 'patient_direct' && phoneParam) {
         // Read directly from storage to ensure we catch it even on fresh load
-        const savedUsersStr = localStorage.getItem('users_v5');
+        const savedUsersStr = localStorage.getItem('users_v6');
         const users: RegisteredUser[] = savedUsersStr ? JSON.parse(savedUsersStr) : [];
         
         const matchedUser = users.find(u => u.patientPhone === phoneParam);
@@ -111,6 +150,9 @@ const App: React.FC = () => {
             window.history.replaceState({}, document.title, window.location.pathname);
         } else {
             console.warn("Direct login failed: User not found for phone", phoneParam);
+            // ALERT THE USER FOR CROSS-DEVICE SCENARIOS
+            alert(`Patient Account Not Found!\n\nWe could not find a patient with phone: ${phoneParam} on this device.`);
+            setCurrentView(View.Landing);
         }
     } 
     // 2. Fallback to Face Auth Login page
@@ -211,8 +253,6 @@ const App: React.FC = () => {
              };
         } else {
              // Fallback: If image is base64 (local) or missing, send just text
-             // Sending Base64 via Green-API requires multipart/form-data upload which is complex via proxy.
-             // We stick to text fallback for reliability.
              if (imageUrl) console.warn("Image is not a public URL (likely local base64). Sending text only.");
              payload = {
                 chatId: chatId,
@@ -322,6 +362,28 @@ const App: React.FC = () => {
     setCurrentView(View.Landing);
   };
 
+  // New Utility to reset app data for testing
+  const handleResetData = () => {
+    if(window.confirm("Are you sure? This will delete all users, medicines, and logs.")) {
+        localStorage.clear();
+        sessionStorage.clear();
+        window.location.reload();
+    }
+  };
+
+  // --- SYNC DATA UTILS ---
+  const handleExportData = () => {
+      const data = {
+          users: allUsers,
+          medicines: allMedicines,
+          logs: allLogs
+      };
+      const json = JSON.stringify(data);
+      navigator.clipboard.writeText(json).then(() => {
+          alert("Data Copied to Clipboard!");
+      });
+  };
+
   const sendReminderSMS = async (medicine: Medicine, manualTrigger: boolean = false) => {
     const owner = allUsers.find(u => u.caretakerPhone === medicine.caretakerId);
     const targetPhone = owner?.patientPhone;
@@ -340,7 +402,6 @@ const App: React.FC = () => {
     const foodInstruction = medicine.beforeFood ? 'BEFORE' : 'AFTER';
     
     // Direct Login Link (Magic Link)
-    // We add the phone number so we know WHO to log in
     const appLink = `${window.location.origin}?view=patient_direct&phone=${targetPhone}`;
 
     // Patient Reminder Format
@@ -350,7 +411,6 @@ const App: React.FC = () => {
     
     if (manualTrigger) {
         if (result.success) {
-            // Success alert handled in simulation mode or silent for auto
             if (!SIMULATION_MODE) console.log("Sent successfully");
         } else {
             alert("WhatsApp Failed: " + result.error);
@@ -390,17 +450,21 @@ const App: React.FC = () => {
         );
 
         if (!takenToday && !missedToday) {
-           if (!activeReminder || med.schedule.time === currentTimeStr) {
-               setActiveReminder(med);
+           // If we are logged in as the specific patient for this med, show modal
+           if (currentUser && currentUser.caretakerPhone === med.caretakerId && currentView === View.Patient) {
+               if (!activeReminder || med.schedule.time === currentTimeStr) {
+                   setActiveReminder(med);
+               }
            }
            
+           // Any open tab can trigger the SMS logic to ensure reliable delivery
            if (med.schedule.time === currentTimeStr) {
                sendReminderSMS(med, false); 
            }
         }
       }
     }
-  }, [allMedicines, allLogs, activeReminder, lastSmsTime, allUsers]); 
+  }, [allMedicines, allLogs, activeReminder, lastSmsTime, allUsers, currentUser, currentView]); 
 
   useEffect(() => {
     if (allMedicines.length > 0) {
@@ -432,7 +496,11 @@ const App: React.FC = () => {
                     case View.Landing:
                         return <LandingScreen 
                             onRegisterClick={() => setCurrentView(View.Register)}
-                            onLoginClick={() => setCurrentView(View.LoginChoice)}
+                            onCaretakerLoginClick={() => setCurrentView(View.LoginCaretaker)}
+                            onPatientLoginClick={() => setCurrentView(View.LoginPatient)}
+                            onResetData={handleResetData}
+                            onExportData={handleExportData}
+                            hasData={allUsers.length > 0}
                         />;
                     case View.Register:
                         return <RegisterScreen 
@@ -440,6 +508,7 @@ const App: React.FC = () => {
                             onBack={() => setCurrentView(View.Landing)}
                         />;
                     case View.LoginChoice:
+                        // Deprecated in new flow but keeping for backup
                         return <LoginChoiceScreen
                             onCaretakerSelect={() => setCurrentView(View.LoginCaretaker)}
                             onPatientSelect={() => setCurrentView(View.LoginPatient)}
@@ -448,16 +517,23 @@ const App: React.FC = () => {
                     case View.LoginCaretaker:
                         return <CaretakerLoginScreen 
                             onLogin={handleCaretakerLogin}
-                            onBack={() => setCurrentView(View.LoginChoice)}
+                            onBack={() => setCurrentView(View.Landing)}
                         />;
                     case View.LoginPatient:
                         return <PatientLoginScreen 
                             onSuccess={handlePatientLogin}
-                            onBack={() => setCurrentView(View.LoginChoice)}
+                            onBack={() => setCurrentView(View.Landing)}
                             registeredUsers={allUsers}
                         />;
                     default:
-                        return <LandingScreen onRegisterClick={() => setCurrentView(View.Register)} onLoginClick={() => setCurrentView(View.LoginChoice)} />;
+                        return <LandingScreen 
+                                onRegisterClick={() => setCurrentView(View.Register)} 
+                                onCaretakerLoginClick={() => setCurrentView(View.LoginCaretaker)}
+                                onPatientLoginClick={() => setCurrentView(View.LoginPatient)}
+                                onResetData={handleResetData}
+                                onExportData={handleExportData}
+                                hasData={allUsers.length > 0}
+                               />;
                 }
             })()}
         </div>
@@ -466,7 +542,7 @@ const App: React.FC = () => {
 
   return (
     <div className="flex flex-col min-h-screen bg-gray-50">
-      <Header onLogout={handleLogout} />
+      <Header onLogout={handleLogout} currentUser={currentUser} currentView={currentView} />
       <main className="flex-grow container mx-auto p-4 md:p-8">
         {currentView === View.Caretaker ? (
           <CaretakerView 
