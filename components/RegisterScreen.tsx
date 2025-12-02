@@ -198,8 +198,8 @@ const RegisterScreen: React.FC<RegisterScreenProps> = ({ onRegister, onBack }) =
   const passwordCriteria = checkPasswordCriteria(password);
 
   return (
-    <div className="flex items-center justify-center min-h-screen bg-gray-100 p-4">
-      <div className="w-full max-w-4xl p-8 bg-white rounded-xl shadow-lg relative flex flex-col md:flex-row gap-8">
+    <div className="flex items-center justify-center min-h-screen bg-blue-600 p-4">
+      <div className="w-full max-w-4xl p-8 bg-white rounded-3xl shadow-2xl relative flex flex-col md:flex-row gap-8">
         <button onClick={onBack} className="absolute top-4 left-4 text-gray-500 hover:text-gray-800 z-10">
             <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />

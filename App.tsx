@@ -498,9 +498,6 @@ const App: React.FC = () => {
                             onRegisterClick={() => setCurrentView(View.Register)}
                             onCaretakerLoginClick={() => setCurrentView(View.LoginCaretaker)}
                             onPatientLoginClick={() => setCurrentView(View.LoginPatient)}
-                            onResetData={handleResetData}
-                            onExportData={handleExportData}
-                            hasData={allUsers.length > 0}
                         />;
                     case View.Register:
                         return <RegisterScreen 
@@ -530,9 +527,6 @@ const App: React.FC = () => {
                                 onRegisterClick={() => setCurrentView(View.Register)} 
                                 onCaretakerLoginClick={() => setCurrentView(View.LoginCaretaker)}
                                 onPatientLoginClick={() => setCurrentView(View.LoginPatient)}
-                                onResetData={handleResetData}
-                                onExportData={handleExportData}
-                                hasData={allUsers.length > 0}
                                />;
                 }
             })()}
